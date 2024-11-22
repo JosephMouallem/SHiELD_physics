@@ -44,6 +44,7 @@
      &,             rv => con_rv, hvap => con_hvap
      &,             hfus => con_hfus, fv => con_fvirt
      &,             eps => con_eps, epsm1 => con_epsm1
+      use mpp_mod, only : mpp_pe, mpp_chksum, mpp_root_pe, stdout
 !
       implicit none
 !
@@ -89,6 +90,7 @@
       integer i,is,k,kk,n,km1,kmpbl,kmscu,ntrac1
       integer lcld(im),kcld(im),krad(im),mrad(im)
       integer kx1(im), kpblx(im)
+      integer unit
 !
       real(kind=kind_phys) tke(im,km),  tkeh(im,km-1)
 !
@@ -120,7 +122,14 @@
      &                     xkzm_hx(im),  xkzm_mx(im),
      &                     rdzt(im,km-1),
      &                     al(im,km-1),  ad(im,km),   au(im,km-1),
-     &                     f1(im,km),    f2(im,km*(ntrac-1))
+     &                     f1(im,km),    f2(im,km*(ntrac-1)),
+     &                     al_0(1:im,1:km),ad_0(1:im,1:km),
+     &                     au_0(1:im,1:km),
+     &                     f1_0(1:im,1:km),  f2_0(1:im,1:km),
+     &                     al_1(1:im,1:km),ad_1(1:im,1:km),
+     &                     au_1(1:im,1:km),
+     &                     f1_1(1:im,1:km), f2_1(1:im,1:km)
+
 !
       real(kind=kind_phys) elm(im,km),   ele(im,km),  rle(im,km-1),
      &                     ckz(im,km),   chz(im,km), 
@@ -166,7 +175,7 @@
      &                     epsi,    beta,   chx,    cqx,
      &                     rdt,     rdz,    qmin,   qlmin,
      &                     ri,      rimin,
-     &                     rbcr,    rbint,  tdzmin,
+     &                     rbcr,    rbint,
      &                     rlmn,    rlmx,   elmx,
      &                     ttend,   utend,  vtend,  qtend,
      &                     zfac,    zfmin,  vk,     spdk2,
@@ -190,7 +199,12 @@
       parameter(wfac=7.0,cfac=4.5)
       parameter(gamcrt=3.,gamcrq=0.,sfcfrac=0.1)
       parameter(vk=0.4,rimin=-100.)
-      parameter(rbcr=0.25,zolcru=-0.02,tdzmin=1.e-3)
+      parameter(rbcr=0.25,zolcru=-0.02)
+
+
+      real(kind=kind_phys) :: tdzmin=1.e-3
+
+
       !parameter(rlmn=30.,rlmx=500.,elmx=500.)
       parameter(prmin=0.25,prmax=4.0,prtke=1.0,prscu=0.67)
       parameter(f0=1.e-4,crbmin=0.15,crbmax=0.35)
@@ -205,6 +219,7 @@
       parameter(rchck=1.5,cdtn=25.)
 
       elmx = rlmx
+      unit=stdout()
 !
 !************************************************************************
 !
@@ -970,7 +985,8 @@
            tem1 = max(tem, tdzmin)
            ptem = radj(i) / tem1
            dkt(i,k) = dkt(i,k) + ptem
-           dku(i,k) = dku(i,k) + ptem
+           !dku(i,k) = dku(i,k) + ptem
+           dku(i,k) = dku(i,k) + tdzmin ! + ptem
            dkq(i,k) = dkq(i,k) + ptem
         endif
       enddo
@@ -1366,64 +1382,91 @@ c
 c
 c     recover tendencies of heat and moisture
 c
-      do  k = 1,km
-         do i = 1,im
-            ttend      = (f1(i,k)-t1(i,k))*rdt
-            qtend      = (f2(i,k)-q1(i,k,1))*rdt
-            tdt(i,k)   = tdt(i,k)+ttend
-            rtg(i,k,1) = rtg(i,k,1)+qtend
-            dtsfc(i)   = dtsfc(i)+cont*del(i,k)*ttend
-            dqsfc(i)   = dqsfc(i)+conq*del(i,k)*qtend
-         enddo
-      enddo
-!
-      if(ntrac1 >= 2) then
-        do kk = 2, ntrac1
-          is = (kk-1) * km
-          do k = 1, km
-            do i = 1, im
-              qtend = (f2(i,k+is)-q1(i,k,kk))*rdt
-              rtg(i,k,kk) = rtg(i,k,kk)+qtend
-            enddo
-          enddo
-        enddo
-      endif
+!      do  k = 1,km
+!         do i = 1,im
+!            ttend      = (f1(i,k)-t1(i,k))*rdt
+!            qtend      = (f2(i,k)-q1(i,k,1))*rdt
+!            tdt(i,k)   = tdt(i,k)+ttend
+!            rtg(i,k,1) = rtg(i,k,1)+qtend
+!            dtsfc(i)   = dtsfc(i)+cont*del(i,k)*ttend
+!            dqsfc(i)   = dqsfc(i)+conq*del(i,k)*qtend
+!         enddo
+!      enddo
+!!
+!      if(ntrac1 >= 2) then
+!        do kk = 2, ntrac1
+!          is = (kk-1) * km
+!          do k = 1, km
+!            do i = 1, im
+!              qtend = (f2(i,k+is)-q1(i,k,kk))*rdt
+!              rtg(i,k,kk) = rtg(i,k,kk)+qtend
+!            enddo
+!          enddo
+!        enddo
+!      endif
 !
 ! kgao note - rearrange tracer tendencies 
 !
       !if(ntrac >= 3 ) then 
-        if(ntke == ntrac) then ! tke is the last tracer
-          rtg_in(:,:,:) = rtg(:,:,:) 
-        else                   ! tke is not
-          do kk = 1, ntke-1
-             rtg_in(:,:,kk) = rtg(:,:,kk)
-          enddo
-          rtg_in(:,:,ntke) = rtg(:,:,ntrac)
-          do kk = ntke+1, ntrac
-             rtg_in(:,:,kk) = rtg(:,:,kk-1)
-          enddo
-        endif
+!        if(ntke == ntrac) then ! tke is the last tracer
+!          rtg_in(:,:,:) = rtg(:,:,:) 
+!        else                   ! tke is not
+!          do kk = 1, ntke-1
+!             rtg_in(:,:,kk) = rtg(:,:,kk)
+!          enddo
+!          rtg_in(:,:,ntke) = rtg(:,:,ntrac)
+!          do kk = ntke+1, ntrac
+!             rtg_in(:,:,kk) = rtg(:,:,kk-1)
+!          enddo
+!        endif
       !endif
 !
 !     add tke dissipative heating to temperature tendency
 !
-      if(dspheat) then
-      do k = 1,km1
-        do i = 1,im
-!         tem = min(diss(i,k), dspmax)
-!         ttend = tem / cp
-          ttend = diss(i,k) / cp
-          tdt(i,k) = tdt(i,k) + dspfac * ttend
-        enddo
-      enddo
-      endif
+!      if(dspheat) then
+!      do k = 1,km1
+!        do i = 1,im
+!!         tem = min(diss(i,k), dspmax)
+!!         ttend = tem / cp
+!          ttend = diss(i,k) / cp
+!          tdt(i,k) = tdt(i,k) + dspfac * ttend
+!        enddo
+!      enddo
+!      endif
 c
 c     compute tridiagonal matrix elements for momentum
 c
+          au(:,:) = 0.
+          al(:,:) = 0.
+          ad(:,:) = 0.
+          f1(:,:) = 0.
+          f2(:,:) = 0.
+
+          au_0(:,:) = 0.
+          al_0(:,:) = 0.
+          ad_0(:,:) = 0.
+          f1_0(:,:) = 0.
+          f2_0(:,:) = 0.
+ 
+          au_1(:,:) = 0.
+          al_1(:,:) = 0.
+          ad_1(:,:) = 0.
+          f1_1(:,:) = 0.
+          f2_1(:,:) = 0.
+
+        !print*,'A f2',mpp_pe(),mpp_chksum(f2_1)
+        !print*,'A al',mpp_pe(),mpp_chksum(al_0)
+        !print*,'A au',mpp_pe(),mpp_chksum(au_0)
+        !print*,'A ad',mpp_pe(),mpp_chksum(ad_0)
+!        write(unit,*),'A f2',mpp_pe(),mpp_chksum(f2_1(1:im,1:km))
+!        write(unit,*),'A al',mpp_pe(),mpp_chksum(al_0(1:im,1:km))
+!        write(unit,*),'A au',mpp_pe(),mpp_chksum(au_0(1:im,1:km))
+!        write(unit,*),'A ad',mpp_pe(),mpp_chksum(ad_0(1:im,1:km))
+
       do i=1,im
-         ad(i,1) = 1.0 + dtdz1(i) * stress(i) / spd1(i)
-         f1(i,1) = u1(i,1)
-         f2(i,1) = v1(i,1)
+         ad_0(i,1) = 1.0 + dtdz1(i) * stress(i) / spd1(i)
+         f1_0(i,1) = u1(i,1)
+         f2_0(i,1) = v1(i,1)
       enddo
 c
       do k = 1,km1
@@ -1432,31 +1475,31 @@ c
           dtodsu  = dt2/del(i,k+1)
           dsig    = prsl(i,k)-prsl(i,k+1)
           rdz     = rdzt(i,k)
-          tem1    = dsig * dku(i,k) * rdz
+          tem1    = dsig * rdz * dku(i,k)
           dsdz2   = tem1*rdz
-          au(i,k) = -dtodsd*dsdz2
-          al(i,k) = -dtodsu*dsdz2
-          ad(i,k) = ad(i,k)-au(i,k)
-          ad(i,k+1)= 1.-al(i,k)
+          au_0(i,k) = -dtodsd*dsdz2
+          al_0(i,k) = -dtodsu*dsdz2
+          ad_0(i,k) = ad_0(i,k)-au_0(i,k)
+          ad_0(i,k+1)= 1.-al_0(i,k)
           tem2    = dsig * rdz
-!
+
           if(pcnvflg(i) .and. k < kpbl(i)) then
              ptem      = 0.5 * tem2 * xmf(i,k)
              ptem1     = dtodsd * ptem
              ptem2     = dtodsu * ptem
              tem       = u1(i,k) + u1(i,k+1)
              ptem      = ucko(i,k) + ucko(i,k+1)
-             f1(i,k)   = f1(i,k) - (ptem - tem) * ptem1
-             f1(i,k+1) = u1(i,k+1) + (ptem - tem) * ptem2
+             f1_0(i,k)   = f1_0(i,k)! - (ptem - tem) * ptem1
+             f1_0(i,k+1) = u1(i,k+1)! + (ptem - tem) * ptem2
              tem       = v1(i,k) + v1(i,k+1)
              ptem      = vcko(i,k) + vcko(i,k+1)
-             f2(i,k)   = f2(i,k) - (ptem - tem) * ptem1
-             f2(i,k+1) = v1(i,k+1) + (ptem - tem) * ptem2
+             f2_0(i,k)   = f2_0(i,k)! - (ptem - tem) * ptem1
+             f2_0(i,k+1) = v1(i,k+1)! + (ptem - tem) * ptem2
           else
-             f1(i,k+1) = u1(i,k+1)
-             f2(i,k+1) = v1(i,k+1)
+             f1_0(i,k+1) = u1(i,k+1)
+             f2_0(i,k+1) = v1(i,k+1)
           endif
-!
+!!
           if(scuflg(i)) then
             if(k >= mrad(i) .and. k < krad(i)) then
               ptem      = 0.5 * tem2 * xmfd(i,k)
@@ -1464,28 +1507,45 @@ c
               ptem2     = dtodsu * ptem
               tem       = u1(i,k) + u1(i,k+1)
               ptem      = ucdo(i,k) + ucdo(i,k+1)
-              f1(i,k)   = f1(i,k) + (ptem - tem) *ptem1
-              f1(i,k+1) = f1(i,k+1) - (ptem - tem) *ptem2
+              f1_0(i,k)   = f1_0(i,k)! + (ptem - tem) *ptem1
+              f1_0(i,k+1) = f1_0(i,k+1)! - (ptem - tem) *ptem2
               tem       = v1(i,k) + v1(i,k+1)
               ptem      = vcdo(i,k) + vcdo(i,k+1)
-              f2(i,k)   = f2(i,k) + (ptem - tem) * ptem1
-              f2(i,k+1) = f2(i,k+1) - (ptem - tem) * ptem2
+              f2_0(i,k)   = f2_0(i,k)! + (ptem - tem) * ptem1
+              f2_0(i,k+1) = f2_0(i,k+1)! - (ptem - tem) * ptem2
             endif
           endif
-!
+
         enddo
       enddo
+
+      do i = 1,im
+       do k = 1,km
+          au_1(i,k) = au_0(i,k)
+          al_1(i,k) = al_0(i,k)
+          ad_1(i,k) = ad_0(i,k)
+          f1_1(i,k) = f1_0(i,k)
+          f2_1(i,k) = f2_0(i,k)
+        enddo
+      enddo
+
 c
 c     solve tridiagonal problem for momentum
 c
-      call tridi2(im,km,al,ad,au,f1,f2,au,f1,f2)
+      !call tridi1n(al_0,ad_0,au_0,f1_0,f2_0,au_1,f1_1,f2_1,1,im,1,km,1)
+      call tridi222(im,km,al_0,ad_0,au_0,f1_0,f2_0,au_1,f1_1,f2_1)
+        !print*,'C f2',mpp_pe(),mpp_chksum(f2_1)
+!        write(unit,*),'C f2',mpp_pe(),mpp_chksum(f2_1(1:im,1:km))
+
+
+
 c
 c     recover tendencies of momentum
 c
       do k = 1,km
          do i = 1,im
-            utend = (f1(i,k)-u1(i,k))*rdt
-            vtend = (f2(i,k)-v1(i,k))*rdt
+            utend = (f1_1(i,k)-u1(i,k))*rdt
+            vtend = (f2_1(i,k)-v1(i,k))*rdt
             du(i,k)  = du(i,k)+utend
             dv(i,k)  = dv(i,k)+vtend
             dusfc(i) = dusfc(i)+conw*del(i,k)*utend
@@ -1559,6 +1619,50 @@ c-----------------------------------------------------------------------
           do i=1,l
             at(i,k+is) = at(i,k+is) - au(i,k)*at(i,k+is+1)
           enddo
+        enddo
+      enddo
+c-----------------------------------------------------------------------
+      return
+      end
+
+
+
+      subroutine tridi222(l,n,cl,cm,cu,r1,r2,au,a1,a2)             
+cc
+      use machine     , only : kind_phys
+      implicit none
+      integer, intent(in)  ::         n,l
+      real(kind=kind_phys),dimension(1:l,1:n),intent(in)::cl,cm,cu,r1,r2     
+      real(kind=kind_phys),dimension(1:l,1:n),intent(inout) :: au,a1,a2     
+
+
+      !local
+      real(kind=kind_phys) fk
+      integer             k,i
+c-----------------------------------------------------------------------
+      do i=1,l
+        fk      = 1./cm(i,1)
+        au(i,1) = fk*cu(i,1)
+        a1(i,1) = fk*r1(i,1)
+        a2(i,1) = fk*r2(i,1)
+      enddo
+      do k=2,n-1
+        do i=1,l
+          fk      = 1./(cm(i,k)-(cl(i,k)*au(i,k-1)))
+          au(i,k) = fk*cu(i,k)
+          a1(i,k) = fk*(r1(i,k)-(cl(i,k)*a1(i,k-1)))
+          a2(i,k) = fk*(r2(i,k)-(cl(i,k)*a2(i,k-1)))
+        enddo
+      enddo
+      do i=1,l
+        fk      = 1./(cm(i,n)-(cl(i,n)*au(i,n-1)))
+        a1(i,n) = fk*(r1(i,n)-(cl(i,n)*a1(i,n-1)))
+        a2(i,n) = fk*(r2(i,n)-(cl(i,n)*a2(i,n-1)))
+      enddo
+      do k=n-1,1,-1
+        do i=1,l
+          a1(i,k) = a1(i,k)-(au(i,k)*a1(i,k+1))
+          a2(i,k) = a2(i,k)-(au(i,k)*a2(i,k+1))
         enddo
       enddo
 c-----------------------------------------------------------------------
