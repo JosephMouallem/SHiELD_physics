@@ -1723,7 +1723,7 @@ module FV3GFS_io_mod
     integer :: isc, iec, jsc, jec
 
     logical :: used
-    real, allocatable :: sst(:,:), ci(:,:)
+    real(kind=kind_phys), allocatable :: sst(:,:), ci(:,:)
 
     isc = Atm_block%isc
     iec = Atm_block%iec
