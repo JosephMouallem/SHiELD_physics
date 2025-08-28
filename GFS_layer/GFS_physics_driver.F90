@@ -462,7 +462,7 @@ module module_physics_driver
            stress, t850, ep1d, gamt, gamq, sigmaf, oc, theta, gamma,    &
            sigma, elvmax, wind, work1, work2, runof, xmu, fm10, fh2,    &
            tsurf,  tx1, tx2, ctei_r, evbs, evcw, trans, sbsno, snowc,   &
-           frland, adjsfculw, maxevap,                                  &
+           frland, adjsfculw, maxevap, adjtoadsw, adjtoausw,            &
            adjnirbmu, adjnirdfu, adjvisbmu, adjvisdfu, adjnirbmd,       &
            adjnirdfd, adjvisbmd, adjvisdfd, gabsbdlw, xcosz, tseal,     &
            snohf, dlqfac, work3, ctei_rml, cldf, domr, domzr, domip,    &
@@ -876,18 +876,31 @@ module module_physics_driver
              Grid%coslat, Grid%xlon, Radtend%coszen, Sfcprop%tsfc,          &
              Statein%tgrs(1,1), Radtend%tsflw, Radtend%semis,               &
              Coupling%sfcdsw, Coupling%sfcnsw, Coupling%sfcdlw,             &
-             Radtend%htrsw, Radtend%swhc, Radtend%htrlw, Radtend%lwhc,      &
-             Coupling%nirbmui, Coupling%nirdfui, Coupling%visbmui,          &
-             Coupling%visdfui, Coupling%nirbmdi, Coupling%nirdfdi,          &
-             Coupling%visbmdi, Coupling%visdfdi, ix, im, levs,              &
-             Model%daily_mean,                                              &
+             Diag%topfsw, Radtend%htrsw, Radtend%swhc, Radtend%htrlw,       &
+             Radtend%lwhc, Coupling%nirbmui, Coupling%nirdfui,              &
+             Coupling%visbmui, Coupling%visdfui, Coupling%nirbmdi,          &
+             Coupling%nirdfdi, Coupling%visbmdi, Coupling%visdfdi, ix, im,  &
+             levs, Model%daily_mean,                                        &
 !  ---  input/output:
              dtdt, dtdtc,                                                   &
 !  ---  outputs:
              adjsfcdsw, adjsfcnsw, adjsfcdlw, adjsfculw, xmu, xcosz,        &
              adjnirbmu, adjnirdfu, adjvisbmu, adjvisdfu,                    &
-             adjnirbmd, adjnirdfd, adjvisbmd, adjvisdfd                     &
+             adjnirbmd, adjnirdfd, adjvisbmd, adjvisdfd,                    &
+             adjtoadsw, adjtoausw                                           &
            )
+
+        ! Surface radiative fluxes adjusted to the current physics time step
+        Coupling%nirbmda(:) = adjnirbmd(:)
+        Coupling%nirdfda(:) = adjnirdfd(:)
+        Coupling%visbmda(:) = adjvisbmd(:)
+        Coupling%visdfda(:) = adjvisdfd(:)
+        Coupling%nirbmua(:) = adjnirbmu(:)
+        Coupling%nirdfua(:) = adjnirdfu(:)
+        Coupling%visbmua(:) = adjvisbmu(:)
+        Coupling%visdfua(:) = adjvisdfu(:)
+        Coupling%coszena(:) = xcosz(:)
+        Coupling%sfcdlwa(:) = adjsfcdlw(:)
 
         if (Model%do_diagnostic_radiation_with_scaled_co2) then
            call compute_diagnostics_with_scaled_co2(                        &
@@ -959,6 +972,11 @@ module module_physics_driver
           Diag%uswsfc_override(:) = Diag%uswsfc_override(:) + (adjsfcdsw_for_coupling(:) - adjsfcnsw_for_coupling(:))*dtf
           Diag%dlwsfc_override(:) = Diag%dlwsfc_override(:) + adjsfcdlw_for_coupling(:)*dtf
         endif
+
+        Diag%dswtoa(:) = Diag%dswtoa(:) + adjtoadsw(:)*dtf
+        Diag%uswtoa(:) = Diag%uswtoa(:) + adjtoausw(:)*dtf
+        Diag%dswtoai(:) = adjtoadsw(:)
+        Diag%uswtoai(:) = adjtoausw(:)
 
         if (Model%ldiag3d) then
           if (Model%lsidea) then
@@ -1190,21 +1208,17 @@ module module_physics_driver
          !else
 !!$         endif
 
-            ! kgao - need a logic to ensure sfc_coupled is true when coupled with MOM6
             if (Model%sfc_coupled) then
-! a version of sfc_diff from coupling with MOM6 by kgao  
-! Sfcprop%uustar,Sfcprop%zorl,Sfcprop%ztrl are not updated over ocean points
-            call sfc_diff_coupled(im,Statein%pgr, Statein%ugrs, Statein%vgrs,&
+! a version of sfc_diff for coupling with MOM6 by kgao 
+! lhflx is used as a flag to indicate if a grid point is a valid dynamical ocean point
+            call sfc_diff_coupled(im, Statein%pgr, Statein%ugrs, Statein%vgrs,&
                  Statein%tgrs, Statein%qgrs, Diag%zlvl, Sfcprop%snowd, &
                  Sfcprop%tsfc, Sfcprop%zorl, Sfcprop%ztrl, cd,      &
                  cdq, rb, Statein%prsl(1,1), work3, islmsk, stress, &
                  Sfcprop%ffmm,  Sfcprop%ffhh, Sfcprop%uustar,       &
                  wind,  Tbd%phy_f2d(1,Model%num_p2d), fm10, fh2,    &
                  sigmaf, vegtype, Sfcprop%shdmax, Model%ivegsrc,    &
-                 tsurf, flag_iter) !, Model%redrag, Model%z0s_max,     &
-                 !Model%do_z0_moon, Model%do_z0_hwrf15,              &
-                 !Model%do_z0_hwrf17, Model%do_z0_hwrf17_hwonly,     &
-                 !Model%wind_th_hwrf)
+                 tsurf, flag_iter, Sfcprop%lhflx)
 
             else if (Model%sfc_gfdl) then
 ! a new and more flexible version of sfc_diff by kgao
@@ -1316,6 +1330,7 @@ module module_physics_driver
            (im, Statein%pgr, Statein%ugrs, Statein%vgrs, Statein%tgrs,  &
             Statein%qgrs, Sfcprop%tsfc, cd, cdq, Statein%prsl(1,1),     &
             work3, islmsk, Tbd%phy_f2d(1,Model%num_p2d), flag_iter,     &
+            maxevap,                                                    &
             ! kgao: shflx and lhflx from coupler 
             Sfcprop%shflx, Sfcprop%lhflx,                               &
 !  ---  outputs:
@@ -4357,7 +4372,7 @@ module module_physics_driver
      real(kind=kind_phys), dimension(im,levs) :: dtdt, dtdtc
      real(kind=kind_phys), dimension(im) :: adjsfcdsw, adjsfcnsw, adjsfcdlw, &
         adjsfculw, adjnirbmu, adjnirdfu, adjvisbmu, adjvisdfu, adjnirbmd,    &
-        adjnirdfd, adjvisbmd, adjvisdfd, xmu, xcosz
+        adjnirdfd, adjvisbmd, adjvisdfd, adjtoadsw, adjtoausw, xmu, xcosz
 
      do n = 1, Model%n_diagnostic_radiation_calls
         call dcyc2t3                                                                        &
@@ -4366,23 +4381,29 @@ module module_physics_driver
              Grid%coslat, Grid%xlon, Radtend%coszen, Sfcprop%tsfc,                          &
              Statein%tgrs(1,1), Radtend%tsflw, Radtend%semis,                               &
              Coupling%sfcdsw_with_scaled_co2(n,:), Coupling%sfcnsw_with_scaled_co2(n,:),    &
-             Coupling%sfcdlw_with_scaled_co2(n,:), Radtend%htrsw_with_scaled_co2(n,:,:),    &
-             Radtend%swhc_with_scaled_co2(n,:,:), Radtend%htrlw_with_scaled_co2(n,:,:),     &
-             Radtend%lwhc_with_scaled_co2(n,:,:), Coupling%nirbmui_with_scaled_co2(n,:),    &
-             Coupling%nirdfui_with_scaled_co2(n,:), Coupling%visbmui_with_scaled_co2(n,:),  &
-             Coupling%visdfui_with_scaled_co2(n,:), Coupling%nirbmdi_with_scaled_co2(n,:),  &
-             Coupling%nirdfdi_with_scaled_co2(n,:), Coupling%visbmdi_with_scaled_co2(n,:),  &
-             Coupling%visdfdi_with_scaled_co2(n,:), ix, im, levs, Model%daily_mean,         &
+             Coupling%sfcdlw_with_scaled_co2(n,:), Diag%topfsw_with_scaled_co2(n,:),        &
+             Radtend%htrsw_with_scaled_co2(n,:,:), Radtend%swhc_with_scaled_co2(n,:,:),     &
+             Radtend%htrlw_with_scaled_co2(n,:,:), Radtend%lwhc_with_scaled_co2(n,:,:),     &
+             Coupling%nirbmui_with_scaled_co2(n,:), Coupling%nirdfui_with_scaled_co2(n,:),  &
+             Coupling%visbmui_with_scaled_co2(n,:), Coupling%visdfui_with_scaled_co2(n,:),  &
+             Coupling%nirbmdi_with_scaled_co2(n,:), Coupling%nirdfdi_with_scaled_co2(n,:),  &
+             Coupling%visbmdi_with_scaled_co2(n,:), Coupling%visdfdi_with_scaled_co2(n,:),  &
+             ix, im, levs, Model%daily_mean,                                                &
     !  ---  input/output:
              dtdt, dtdtc,                                                                   &
     !  ---  outputs:
              adjsfcdsw, adjsfcnsw, adjsfcdlw, adjsfculw, xmu, xcosz, adjnirbmu, adjnirdfu,  &
              adjvisbmu, adjvisdfu, adjnirbmd, adjnirdfd, adjvisbmd,                         &
-             adjvisdfd                                                                      &
+             adjvisdfd, adjtoadsw, adjtoausw                                                &
            )
 
         Diag%dlwsfc_with_scaled_co2(n,:) = Diag%dlwsfc_with_scaled_co2(n,:) + adjsfcdlw * Model%dtf
         Diag%ulwsfc_with_scaled_co2(n,:) = Diag%ulwsfc_with_scaled_co2(n,:) + adjsfculw * Model%dtf
+
+        Diag%dswtoa_with_scaled_co2(n,:) = Diag%dswtoa_with_scaled_co2(n,:) + adjtoadsw * Model%dtf
+        Diag%uswtoa_with_scaled_co2(n,:) = Diag%uswtoa_with_scaled_co2(n,:) + adjtoausw * Model%dtf
+        Diag%dswtoai_with_scaled_co2(n,:) = adjtoadsw
+        Diag%uswtoai_with_scaled_co2(n,:) = adjtoausw
 
         Diag%dlwsfci_with_scaled_co2(n,:) = adjsfcdlw
         Diag%ulwsfci_with_scaled_co2(n,:) = adjsfculw

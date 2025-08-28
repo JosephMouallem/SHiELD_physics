@@ -376,6 +376,18 @@ module GFS_typedefs
     real (kind=kind_phys), pointer :: sfcdlw_with_scaled_co2(:,:)      => null()   !< total sky sfc downward lw flux with scaled carbon dioxide ( w/m**2 )
                                                                  !< GFS_radtend_type%sfclsw%dnfxc
 
+    !--- Surface radiative fluxes adjusted to physics time step (kun gao)
+    real (kind=kind_phys), pointer :: nirbmda(:)    => null()  !< sfc nir beam sw downward flux (w/m2)
+    real (kind=kind_phys), pointer :: nirdfda(:)    => null()  !< sfc nir diff sw downward flux (w/m2)
+    real (kind=kind_phys), pointer :: visbmda(:)    => null()  !< sfc uv+vis beam sw downward flux (w/m2)
+    real (kind=kind_phys), pointer :: visdfda(:)    => null()  !< sfc uv+vis diff sw downward flux (w/m2)
+    real (kind=kind_phys), pointer :: nirbmua(:)    => null()  !< sfc nir beam sw upward flux (w/m2)
+    real (kind=kind_phys), pointer :: nirdfua(:)    => null()  !< sfc nir diff sw upward flux (w/m2)
+    real (kind=kind_phys), pointer :: visbmua(:)    => null()  !< sfc uv+vis beam sw upward flux (w/m2)
+    real (kind=kind_phys), pointer :: visdfua(:)    => null()  !< sfc uv+vis diff sw upward flux (w/m2)
+    real (kind=kind_phys), pointer :: coszena(:)    => null()  !< cos of zenith angle
+    real (kind=kind_phys), pointer :: sfcdlwa(:)    => null()  !< sfc lw downward flux (w/m2)
+
     !--- incoming quantities
     real (kind=kind_phys), pointer :: dusfcin_cpl(:) => null()   !< aoi_fld%dusfcin(item,lan)
     real (kind=kind_phys), pointer :: dvsfcin_cpl(:) => null()   !< aoi_fld%dvsfcin(item,lan)
@@ -661,7 +673,8 @@ module GFS_typedefs
     logical              :: shcnvcw         !< flag for shallow convective cloud
     logical              :: redrag          !< flag for reduced drag coeff. over sea
     logical              :: sfc_gfdl        !< flag for using updated sfc layer scheme
-    logical              :: sfc_coupled     !< flag for using sfc layer scheme designed for coupling
+    logical              :: sfc_coupled     !< flag for using sfc layer scheme designed for coupled SHiELD 
+                                            !< will set to true by atmos_driver; this is not a namelist parameter
     real(kind=kind_phys) :: z0s_max         !< a limiting value for z0 under high winds
     logical              :: do_z0_moon      !< flag for using z0 scheme in Moon et al. 2007 (kgao)
     logical              :: do_z0_hwrf15    !< flag for using z0 scheme in 2015 HWRF (kgao)
@@ -1272,6 +1285,10 @@ module GFS_typedefs
     real (kind=kind_phys), pointer :: ulwsfc_with_scaled_co2(:,:) => null()    !< interval-average lw up at sfc with scaled carbon dioxide (w/m**2)
     real (kind=kind_phys), pointer :: dswsfc_with_scaled_co2(:,:) => null()    !< interval-average sw dn at sfc with scaled carbon dioxide (w/m**2)
     real (kind=kind_phys), pointer :: uswsfc_with_scaled_co2(:,:) => null()    !< interval-average sw up at sfc with scaled carbon dioxide (w/m**2)
+    real (kind=kind_phys), pointer :: dswtoa_with_scaled_co2(:,:) => null()    !< interval-average sw dn at toa with scaled carbon dioxide (w/m**2)
+    real (kind=kind_phys), pointer :: uswtoa_with_scaled_co2(:,:) => null()    !< interval-average sw up at toa with scaled carbon dioxide (w/m**2)
+    real (kind=kind_phys), pointer :: dswtoai_with_scaled_co2(:,:) => null()    !< instantaneous sw dn at toa with scaled carbon dioxide (w/m**2)
+    real (kind=kind_phys), pointer :: uswtoai_with_scaled_co2(:,:) => null()    !< instantaneous sw up at toa with scaled carbon dioxide (w/m**2)
 
     real (kind=kind_phys), pointer :: htrlw_with_scaled_co2(:,:,:) => null()    !< instantaneous 3d all-sky longwave radiative heating rate with scaled co2
     real (kind=kind_phys), pointer :: htrsw_with_scaled_co2(:,:,:) => null()    !< instantaneous 3d all-sky shortwave radiative heating rate with scaled co2
@@ -1305,6 +1322,10 @@ module GFS_typedefs
     real (kind=kind_phys), pointer :: dlwsfc_override (:) => null()   !< time accumulated sfc dn lw flux ( w/m**2 ) when gfs_physics_nml.override_surface_radiative_fluxes == .true.
     real (kind=kind_phys), pointer :: dswsfc_override (:) => null()   !< time accumulated sfc dn sw flux ( w/m**2 ) when gfs_physics_nml.override_surface_radiative_fluxes == .true.
     real (kind=kind_phys), pointer :: uswsfc_override (:) => null()   !< time accumulated sfc up sw flux ( w/m**2 ) when gfs_physics_nml.override_surface_radiative_fluxes == .true.
+    real (kind=kind_phys), pointer :: dswtoa (:)    => null()   !< time accumulated toa dn sw flux ( w/m**2 )
+    real (kind=kind_phys), pointer :: uswtoa (:)    => null()   !< time accumulated toa up sw flux ( w/m**2 )
+    real (kind=kind_phys), pointer :: dswtoai (:)    => null()   !< instantaneous toa dn sw flux ( w/m**2 )
+    real (kind=kind_phys), pointer :: uswtoai (:)    => null()   !< instantaneous toa up sw flux ( w/m**2 )
     real (kind=kind_phys), pointer :: suntim (:)    => null()   !< sunshine duration time (s)
     real (kind=kind_phys), pointer :: runoff (:)    => null()   !< total water runoff
     real (kind=kind_phys), pointer :: ep     (:)    => null()   !< potential evaporation
@@ -1726,8 +1747,8 @@ module GFS_typedefs
     Sfcprop%uustar  = clear_val
     Sfcprop%oro     = clear_val
     Sfcprop%oro_uf  = clear_val
-    Sfcprop%shflx   = clear_val
-    Sfcprop%lhflx   = clear_val
+    Sfcprop%shflx   = -999 !clear_val
+    Sfcprop%lhflx   = -999 !clear_val
 
     if (Model%myj_pbl) then
        allocate (Sfcprop%QZ0  (IM))
@@ -1961,6 +1982,28 @@ module GFS_typedefs
     Coupling%sfcdsw    = clear_val
     Coupling%sfcnsw    = clear_val
     Coupling%sfcdlw    = clear_val
+
+    allocate (Coupling%nirbmda  (IM))
+    allocate (Coupling%nirdfda  (IM))
+    allocate (Coupling%visbmda  (IM))
+    allocate (Coupling%visdfda  (IM))
+    allocate (Coupling%nirbmua  (IM))
+    allocate (Coupling%nirdfua  (IM))
+    allocate (Coupling%visbmua  (IM))
+    allocate (Coupling%visdfua  (IM))
+    allocate (Coupling%coszena  (IM))
+    allocate (Coupling%sfcdlwa  (IM))
+
+    Coupling%nirbmda = clear_val
+    Coupling%nirdfda = clear_val
+    Coupling%visbmda = clear_val
+    Coupling%visdfda = clear_val
+    Coupling%nirbmua = clear_val
+    Coupling%nirdfua = clear_val
+    Coupling%visbmua = clear_val
+    Coupling%visdfua = clear_val
+    Coupling%coszena = clear_val
+    Coupling%sfcdlwa = clear_val
 
     if (Model%do_diagnostic_radiation_with_scaled_co2) then
        allocate (Coupling%nirbmdi_with_scaled_co2  (Model%n_diagnostic_radiation_calls,IM))
@@ -2393,7 +2436,7 @@ end subroutine overrides_create
     logical              :: shcnvcw        = .false.                  !< flag for shallow convective cloud
     logical              :: redrag         = .false.                  !< flag for reduced drag coeff. over sea
     logical              :: sfc_gfdl       = .false.                  !< flag for using new sfc layer scheme by kgao at GFDL
-    logical              :: sfc_coupled    = .false.                !< flag for using sfc layer scheme designed for coupling 
+    logical              :: sfc_coupled    = .false.                  !< flag for using sfc layer scheme designed for coupled SHiELD 
     real(kind=kind_phys) :: z0s_max        = .317e-2                  !< a limiting value for z0 under high winds
     logical              :: do_z0_moon     = .false.                  !< flag for using z0 scheme in Moon et al. 2007
     logical              :: do_z0_hwrf15   = .false.                  !< flag for using z0 scheme in 2015 HWRF
@@ -2647,7 +2690,7 @@ end subroutine overrides_create
                                ras, trans_trac, old_monin, cnvgwd, mstrat, moist_adj,       &
                                cscnv, cal_pre, do_aw, do_shoc, shocaftcnv, shoc_cld,        &
                                h2o_phys, pdfcld, shcnvcw, redrag, sfc_gfdl, z0s_max,        &
-                               sfc_coupled, do_z0_moon, do_z0_hwrf15, do_z0_hwrf17,         &
+                               do_z0_moon, do_z0_hwrf15, do_z0_hwrf17,                      &
                                do_z0_hwrf17_hwonly, wind_th_hwrf,                           &
                                hybedmf, dspheat, lheatstrg, hour_canopy, afac_canopy,       &
                                cnvcld, no_pbl, xkzm_lim, xkzm_fac, xkgdx,                   &
@@ -2888,7 +2931,6 @@ end subroutine overrides_create
     Model%shcnvcw          = shcnvcw
     Model%redrag           = redrag
     Model%sfc_gfdl         = sfc_gfdl
-    Model%sfc_coupled      = sfc_coupled
     Model%z0s_max          = z0s_max
     Model%do_z0_moon       = do_z0_moon
     Model%do_z0_hwrf15     = do_z0_hwrf15
@@ -3620,7 +3662,6 @@ end subroutine overrides_create
       print *, ' shcnvcw           : ', Model%shcnvcw
       print *, ' redrag            : ', Model%redrag
       print *, ' sfc_gfdl          : ', Model%sfc_gfdl
-      print *, ' sfc_coupled       : ', Model%sfc_coupled
       print *, ' z0s_max           : ', Model%z0s_max
       print *, ' do_z0_moon        : ', Model%do_z0_moon
       print *, ' do_z0_hwrf15      : ', Model%do_z0_hwrf15
@@ -4064,6 +4105,10 @@ end subroutine overrides_create
        allocate (Diag%ulwsfc_with_scaled_co2 (Model%n_diagnostic_radiation_calls,IM))
        allocate (Diag%dswsfc_with_scaled_co2 (Model%n_diagnostic_radiation_calls,IM))
        allocate (Diag%uswsfc_with_scaled_co2 (Model%n_diagnostic_radiation_calls,IM))
+       allocate (Diag%dswtoa_with_scaled_co2 (Model%n_diagnostic_radiation_calls,IM))
+       allocate (Diag%uswtoa_with_scaled_co2 (Model%n_diagnostic_radiation_calls,IM))
+       allocate (Diag%dswtoai_with_scaled_co2 (Model%n_diagnostic_radiation_calls,IM))
+       allocate (Diag%uswtoai_with_scaled_co2 (Model%n_diagnostic_radiation_calls,IM))
        if (Model%ldiag3d) then
           allocate (Diag%htrlw_with_scaled_co2 (Model%n_diagnostic_radiation_calls,IM,Model%levs))
           allocate (Diag%htrsw_with_scaled_co2 (Model%n_diagnostic_radiation_calls,IM,Model%levs))
@@ -4100,6 +4145,10 @@ end subroutine overrides_create
     endif
     allocate (Diag%ulwsfc  (IM))
     allocate (Diag%uswsfc  (IM))
+    allocate (Diag%dswtoa  (IM))
+    allocate (Diag%uswtoa  (IM))
+    allocate (Diag%dswtoai  (IM))
+    allocate (Diag%uswtoai  (IM))
     if (Model%override_surface_radiative_fluxes) then
       allocate (Diag%dlwsfc_override(IM))
       allocate (Diag%dswsfc_override(IM))
@@ -4375,6 +4424,10 @@ end subroutine overrides_create
        Diag%ulwsfc_with_scaled_co2 = zero
        Diag%dswsfc_with_scaled_co2 = zero
        Diag%uswsfc_with_scaled_co2 = zero
+       Diag%dswtoa_with_scaled_co2 = zero
+       Diag%uswtoa_with_scaled_co2 = zero
+       Diag%dswtoai_with_scaled_co2 = zero
+       Diag%uswtoai_with_scaled_co2 = zero
        ! Note the 3d radiation multi-call diagnostics are handled as
        ! diagnostics manager controlled fields, so they do not need
        ! to be manually zeroed, so we do not touch them here.
@@ -4416,6 +4469,10 @@ end subroutine overrides_create
     Diag%tclim_iano    = zero
     Diag%ulwsfc  = zero
     Diag%uswsfc  = zero
+    Diag%dswtoa  = zero
+    Diag%uswtoa  = zero
+    Diag%dswtoai = zero
+    Diag%uswtoai = zero
     Diag%suntim  = zero
     Diag%runoff  = zero
     Diag%ep      = zero
